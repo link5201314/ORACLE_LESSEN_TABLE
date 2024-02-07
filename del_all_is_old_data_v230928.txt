@@ -1,0 +1,225 @@
+--Copy From del_all_is_old_data_v230928.txt
+CREATE OR REPLACE PROCEDURE TRW.USP_DEL_ALL_IS_OLD_DATA
+AS 
+	-- *******************************************
+
+	-- 過程名： USP_DEL_ALL_IS_OLD_DATA
+
+	-- 功能描述： 根據LESSEN_TABLE的內容，以及Prcedure傳入參數，設定指定table的is_old_data欄位
+
+	-- 輸入參數說明： N/A
+
+	-- 輸出參數說明： N/A
+
+	-- 調用的過程或函數：  N/A
+
+	-- 建立人員： 劉璟宏
+
+	-- 建立日期： 2023/09/28
+
+	-- 修改人員：
+
+	-- 修改日期：
+
+	-- 修改原因：
+
+	-- 修改結果：
+
+	-- 版本說明： v230928_1
+
+	-- ********** *********************************
+    cur_upd_LESSEN_TABLE NUMBER;
+    CURSOR cur_sel_LESSEN_TABLE IS select * from LESSEN_TABLE;
+    v_chr_is_old_data CHAR(1);
+    v_set_is_old_data CHAR(1);
+    v_reverse_is_old_data CHAR(1);
+    v_job_id NUMBER(10);
+    v_user_id VARCHAR2(30); v_sess_id NUMBER(10); v_client_ip VARCHAR2(20); v_client_name VARCHAR2(150); v_client_machine VARCHAR2(150);
+    v_table_name VARCHAR2(50);
+    v_sys_owner VARCHAR2(10);
+    v_is_enable CHAR(1);
+	v_oldest_date_strategy NUMBER(1);
+	v_customer_oldest_date DATE;
+    v_find_oldest_date_sql_text VARCHAR2(200);
+    v_oldest_date DATE;
+    v_baseline_date DATE;
+    v_diffdates INTEGER;
+    l_counter NUMBER := 0;   
+    v_sql_text VARCHAR2(2000);
+    v_start_date DATE; v_end_date DATE;
+    v_row NUMBER;
+	v_condition VARCHAR2(100) := 'LAST_UPDATE_TIME between :start_date and :end_date';
+    v_funcstart TIMESTAMP := SYSTIMESTAMP;
+    v_timestart TIMESTAMP; v_timeend TIMESTAMP; v_elapsed INTERVAL DAY(2) TO SECOND(3);
+	v_lv2_error_occurred BOOLEAN := FALSE; v_lv3_error_occurred BOOLEAN := FALSE; v_haserror BOOLEAN := FALSE; v_not_found_error BOOLEAN := TRUE;
+    v_err_code NUMBER; v_err_msg VARCHAR2(4000);
+	
+	batch_size NUMBER := 5000000; -- Set your batch size here
+	para_degree NUMBER:= 16;
+BEGIN        
+	--DBMS_OUTPUT.ENABLE (buffer_size => NULL); --使DBMS_OUTPUT的buff_size無限制
+	DBMS_OUTPUT.ENABLE (1000000); --使DBMS_OUTPUT的buff_size為1000000
+	
+	--正式區可解開以下註解，避免異動39個月前的資料
+    --IF in_less_than_months < 39 THEN
+    --    RAISE_APPLICATION_ERROR(-20001, '輸入參數in_less_than_months[ ' || in_less_than_months || ' ]超出範圍[ <36 ]，請改使用USP_UPD_TBL_RANGE_IS_OLD_DATA函式!');
+    --END IF;
+    
+    select USER, SYS_CONTEXT('USERENV', 'SID'), SYS_CONTEXT('USERENV','IP_ADDRESS'), SYS_CONTEXT('USERENV','OS_USER'), SYS_CONTEXT('USERENV','HOST')
+    into v_user_id,v_sess_id,v_client_ip,v_client_name,v_client_machine
+    from dual;
+    SELECT LESSEN_TABLE_EXEC_SQ.nextval into v_job_id FROM DUAL;
+    DBMS_OUTPUT.PUT_LINE('JOB_ID='|| v_job_id ||'; USER_ID=' || v_user_id || '; SESS_ID=' || v_sess_id || '; CLIENT_IP=' || v_client_ip 
+	|| '; CLIENT_NAME=' || v_client_name || '; CLIENT_MACHINE=' || v_client_machine);
+    
+    INSERT INTO LESSEN_TABLE_EXEC_JOB 
+    --VALUES(v_job_id, 'RUNNING', 'USP_DEL_ALL_IS_OLD_DATA', v_funcstart, null, v_chr_is_old_data, in_less_than_months, NULL, NULL, NULL
+	--, v_user_id, v_sess_id, v_client_ip , v_client_name, v_client_machine, NULL, NULL);
+	VALUES(v_job_id, 'RUNNING', 'USP_DEL_ALL_IS_OLD_DATA', v_funcstart, null, 'Y', 0, NULL, NULL, NULL
+	, v_user_id, v_sess_id, v_client_ip , v_client_name, v_client_machine, NULL, NULL);
+    commit;
+    
+    --select trunc(add_months(SYSDATE, - in_less_than_months)) into v_baseline_date from dual;
+	select trunc(SYSDATE) into v_baseline_date from dual;
+    
+	v_lv2_error_occurred := FALSE;
+    FOR sql_list IN cur_sel_LESSEN_TABLE LOOP
+    BEGIN
+		v_not_found_error := FALSE;
+        v_table_name := sql_list.PK_LESSEN_TABLE;
+        v_is_enable := sql_list.ENABLE;
+        v_sys_owner := sql_list.SYS_OWNER;
+        
+        DBMS_OUTPUT.PUT_LINE('Processing table_name=' || v_table_name || '; SYS_OWNER=' || v_sys_owner || '; IS_ENABLE=' || v_is_enable);
+
+        v_sql_text := sql_list.SQL_TEXT;
+        v_find_oldest_date_sql_text := sql_list.FIND_OLDEST_DATE_SQL_TEXT;
+        DBMS_OUTPUT.PUT_LINE('find_oldest_date_sql_text=' || v_find_oldest_date_sql_text);
+        EXECUTE IMMEDIATE v_find_oldest_date_sql_text INTO v_oldest_date;
+        select (v_baseline_date - v_oldest_date) into v_diffdates from dual;
+        dbms_output.put_line('baseline_date= ' || v_baseline_date || '; oldest_date=' || v_oldest_date || '; diffdates=' || v_diffdates);
+
+        INSERT INTO LESSEN_TABLE_EXEC_SQL 
+        VALUES(v_job_id, 'RUNNING', v_table_name, v_sys_owner, v_is_enable, v_baseline_date, v_oldest_date, v_diffdates
+		, v_find_oldest_date_sql_text, v_sql_text, NULL, NULL);
+        commit;
+
+        ---IF v_is_enable = 'Y' and v_diffdates > 0 THEN
+		IF v_is_enable = 'Y' THEN
+            l_counter := 0;
+			v_lv3_error_occurred := FALSE;
+			
+			--------------------------------------
+		  DECLARE
+			--c_records_to_delete SYS_REFCURSOR;
+			--type tabrowstype is table of varchar2(50) index by BINARY_INTEGER;
+            --records_to_delete tabrowstype;
+			sql_stmt VARCHAR2(200); del_stmt VARCHAR2(200);
+			expected_loops NUMBER := 0;
+			total_records NUMBER := 0; total_deleted NUMBER := 0; deleted_count NUMBER := 0;
+		  BEGIN
+			v_timestart := SYSTIMESTAMP;
+			sql_stmt := 'SELECT /*+ PARALLEL(' || v_table_name || ', ' || para_degree || ') */ count(*) FROM ' || v_table_name || ' WHERE is_old_data = ''Y''';
+			del_stmt := 'DELETE /*+ PARALLEL(' || v_table_name || ', ' || para_degree || ') */ FROM ' || v_table_name || ' WHERE is_old_data = ''Y'' and rownum < = ' || batch_size;
+			
+			EXECUTE IMMEDIATE sql_stmt INTO total_records;
+			expected_loops := total_records / batch_size;
+			
+			LOOP
+				v_timestart := SYSTIMESTAMP;
+				l_counter := l_counter + 1;  
+				
+				IF expected_loops != 0 AND l_counter > expected_loops THEN
+					EXECUTE IMMEDIATE sql_stmt INTO total_records;
+				END IF;
+				
+				EXIT WHEN total_records = 0;
+				
+				EXECUTE IMMEDIATE 'ALTER SESSION ENABLE PARALLEL DML';
+                EXECUTE IMMEDIATE del_stmt;
+				EXECUTE IMMEDIATE 'ALTER SESSION DISABLE PARALLEL DML';
+				
+				deleted_count := SQL%ROWCOUNT;
+		  
+				v_timeend := SYSTIMESTAMP;
+                v_elapsed := v_timeend-v_timestart;
+				
+				total_deleted := total_deleted + deleted_count;
+			    --DBMS_OUTPUT.PUT_LINE('Deleted ' || total_deleted || ' records.');
+				
+				INSERT INTO LESSEN_TABLE_EXEC_SQL_DETAIL VALUES(v_job_id, v_table_name, l_counter, v_timestart, v_timeend, v_elapsed, deleted_count, NULL, 0, NULL);
+			  COMMIT;
+			END LOOP;
+
+		  EXCEPTION
+			WHEN OTHERS THEN
+			  ROLLBACK;
+			  v_lv3_error_occurred := TRUE;
+			  v_haserror := TRUE;
+			  v_err_code := SQLCODE;
+			  v_err_msg := SQLERRM;
+			  INSERT INTO LESSEN_TABLE_EXEC_SQL_DETAIL VALUES(v_job_id, v_table_name, l_counter, v_timestart, SYSTIMESTAMP
+			  , SYSTIMESTAMP-v_timestart, deleted_count, null, v_err_code, v_err_msg);
+			  commit;
+			  dbms_output.put_line( '[例外處理3]SQLCODE : ['||SQLCODE||']' );
+			  dbms_output.put_line( '[例外處理3]SQLERRM : ['||SQLERRM||']' );
+		  END;
+			--------------------------------------
+			
+        END IF;  
+        
+		IF v_lv3_error_occurred  THEN
+			UPDATE LESSEN_TABLE_EXEC_SQL SET STATUS = 'WARNING', SQL_CODE=0 WHERE JOB_ID = v_job_id AND LESSEN_TABLE = v_table_name;
+		ELSE
+			UPDATE LESSEN_TABLE_EXEC_SQL SET STATUS = 'COMPLETE', SQL_CODE=0 WHERE JOB_ID = v_job_id AND LESSEN_TABLE = v_table_name;
+		END IF;
+        commit;
+    EXCEPTION
+        WHEN OTHERS THEN
+		  v_lv2_error_occurred := TRUE;
+		  v_haserror := TRUE;
+          v_err_code := SQLCODE;
+          v_err_msg := SQLERRM;
+          UPDATE LESSEN_TABLE_EXEC_SQL SET STATUS='ERROR', SQL_CODE=v_err_code, SQL_ERRM=v_err_msg  
+		  WHERE JOB_ID = v_job_id AND LESSEN_TABLE = v_table_name;
+          commit;
+          dbms_output.put_line( '[例外處理2]SQLCODE : ['||SQLCODE||']' );
+          dbms_output.put_line( '[例外處理2]SQLERRM : ['||SQLERRM||']' );
+    END;
+    END LOOP;
+	
+	IF v_not_found_error THEN
+		RAISE_APPLICATION_ERROR(-20002, '在LESSEN_TABLE中沒有任何已定義項目!');
+	END IF;
+    
+    IF v_lv2_error_occurred or v_haserror THEN
+        UPDATE LESSEN_TABLE_EXEC_JOB SET STATUS='WARNING', SQL_CODE=0, FUNC_END_TIME=SYSTIMESTAMP WHERE JOB_ID = v_job_id;
+    ELSE
+        UPDATE LESSEN_TABLE_EXEC_JOB SET STATUS='COMPLETE', SQL_CODE=0, FUNC_END_TIME=SYSTIMESTAMP WHERE JOB_ID = v_job_id;
+    END IF;
+    commit;
+EXCEPTION
+   WHEN OTHERS THEN
+      v_err_code := SQLCODE;
+      v_err_msg := SQLERRM;
+      UPDATE LESSEN_TABLE_EXEC_JOB SET STATUS='ERROR', FUNC_END_TIME=SYSTIMESTAMP, SQL_CODE=v_err_code, SQL_ERRM=v_err_msg  
+	  WHERE JOB_ID = v_job_id;
+      commit;
+      dbms_output.put_line( '[例外處理1]SQLCODE : ['||SQLCODE||']' );
+      dbms_output.put_line( '[例外處理1]SQLERRM : ['||SQLERRM||']' );
+END;
+/
+
+
+CREATE PUBLIC SYNONYM USP_DEL_ALL_IS_OLD_DATA FOR TRW.USP_DEL_ALL_IS_OLD_DATA;
+
+--開發
+GRANT EXECUTE ON TRW.USP_DEL_ALL_IS_OLD_DATA TO APADMIN; 
+
+--測試
+GRANT EXECUTE ON TRW.USP_DEL_ALL_IS_OLD_DATA TO OMP_ROLE, SSP_ROLE, TMS_ROLE, TWS_ROLE, PMS_ROLE;
+
+--正式(僅限特定帳號)
+GRANT EXECUTE ON TRW.USP_DEL_ALL_IS_OLD_DATA TO SCHED,ISAAC;
+
+EXEC USP_DEL_ALL_IS_OLD_DATA;
