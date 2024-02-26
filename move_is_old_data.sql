@@ -1,7 +1,8 @@
 create or replace PROCEDURE TRW.USP_MOVE_IS_OLD_DATA
 AS
     cur_sel_LESSEN_TABLE sys_refcursor ;
-    
+    sql_list TRW.LESSEN_TABLE@TRWP101_TC%ROWTYPE;
+
     v_count NUMBER;
 	v_new_job_id NUMBER;
     
@@ -9,7 +10,13 @@ AS
     v_sys_owner VARCHAR2(10);
     v_is_enable CHAR(1);
     
-    sql_list TRW.LESSEN_TABLE@TRWP101_TC%ROWTYPE;
+    v_job_id_cnt NUMBER;
+    v_move_job_id NUMBER;
+    v_sql_text VARCHAR2(100);
+    
+    v_bak_cnt NUMBER;
+    v_his_cnt NUMBER;
+    v_del_cnt NUMBER;
     
 BEGIN
 	--1) 為此次job取得最新的job_id
@@ -26,6 +33,7 @@ BEGIN
         END IF;
     END;
     
+    
     EXECUTE IMMEDIATE 'CREATE TABLE TRW.LESSEN_TABLE as Select * from TRW.LESSEN_TABLE@TRWP101_TC';
     
     open cur_sel_LESSEN_TABLE for Select * from TRW.LESSEN_TABLE@TRWP101_TC;
@@ -41,16 +49,59 @@ BEGIN
 		
 		DBMS_OUTPUT.PUT_LINE('Processing table_name=' || v_table_name || '; SYS_OWNER=' || v_sys_owner || '; IS_ENABLE=' || v_is_enable);
 		--2) 確認上一季資料已完整搬移再清空table_bakhis：
-		
+        v_sql_text := 'SELECT count(DISTINCT move_job_id) FROM TRW.' || v_table_name || '_bakhis@TRWP101_TC';
+        EXECUTE IMMEDIATE v_sql_text INTO v_job_id_cnt;
+        
+        --判斷move_job_id的值是否唯一
+        IF v_job_id_cnt = 1 THEN
+          DBMS_OUTPUT.PUT_LINE('found');
+          -- 取得該筆 move_job_id 的值
+          v_sql_text := 'SELECT move_job_id FROM TRW.' || v_table_name || '_bakhis@TRWP101_TC fetch first row only';
+          EXECUTE IMMEDIATE v_sql_text INTO v_move_job_id;
+          DBMS_OUTPUT.PUT_LINE('get job id: ' || v_move_job_id);
+          
+          --取得主中心與異地相同job_id的資料筆數
+        ELSE
+            -- 沒有資料或資料筆數大於一筆
+            DBMS_OUTPUT.PUT_LINE('No data or more than one row found.');
+            RAISE_APPLICATION_ERROR(-20004, '[TRW.' || v_table_name || '_bakhis@TRWP101_TC]，' || 'MOVE_JOB_ID值不唯一!');
+        END IF;
+	
+        --開始搬移與刪除歷史資料
+        BEGIN
+            SAVEPOINT DOHIS;	
+            
+            --執行無例外錯誤最後才commit，並將此job執行紀錄至job紀錄table(含job_id、處理table、備份筆數、日期)
+            commit;
+        EXCEPTION
+            WHEN OTHERS THEN
+            --  v_lv3_error_occurred := TRUE;
+            --  v_haserror := TRUE;
+            --  v_err_code := SQLCODE;
+            --  v_err_msg := SQLERRM;
+            --  INSERT INTO LESSEN_TABLE_EXEC_SQL_DETAIL VALUES(v_job_id, v_table_name, l_counter, v_timestart, SYSTIMESTAMP
+            --  , SYSTIMESTAMP-v_timestart, v_row, v_sql_para, v_err_code, v_err_msg);
+            --  commit;
+                dbms_output.put_line( '[例外處理3]SQLCODE : ['||SQLCODE||']' );
+                dbms_output.put_line( '[例外處理3]SQLERRM : ['||SQLERRM||']' );
+                rollback TO DOHIS;
+        END;
 	END LOOP;
     
     dbms_output.put_line('Total Rows: ' || cur_sel_LESSEN_TABLE%rowcount);--here you will get total row count;
     
     CLOSE cur_sel_LESSEN_TABLE;
 END;
+/
 
 DROP PROCEDURE USP_MOVE_IS_OLD_DATA;
 DROP PUBLIC SYNONYM USP_MOVE_IS_OLD_DATA;
 
 CREATE PUBLIC SYNONYM USP_MOVE_IS_OLD_DATA FOR TRW.USP_MOVE_IS_OLD_DATA;
+
+
+update SSP_TKT_TXN_HIS_BAKHIS set move_job_id = '2';
+update SSP_TKT_TXN_HIS_BAKHIS set move_job_id = '3' where PK_SSP_TKT_TXN_HIS = '608D53961BB847A7BD645D8FBCBB1E37';
+
+commit;
 
