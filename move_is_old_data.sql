@@ -14,6 +14,9 @@ AS
     v_move_job_id NUMBER;
     v_sql_text VARCHAR2(100);
     
+    v_prod_last_cnt NUMBER;
+    v_dr_last_cnt NUMBER;
+    
     v_bak_cnt NUMBER;
     v_his_cnt NUMBER;
     v_del_cnt NUMBER;
@@ -61,6 +64,15 @@ BEGIN
           DBMS_OUTPUT.PUT_LINE('get job id: ' || v_move_job_id);
           
           --取得主中心與異地相同job_id的資料筆數
+          v_sql_text := 'SELECT count(*) FROM TRW.' || v_table_name || '_bakhis@TRWP101_TC where move_job_id = ' || v_move_job_id;
+          EXECUTE IMMEDIATE v_sql_text INTO v_prod_last_cnt;
+          
+          v_sql_text := 'SELECT count(*) FROM HIS.' || v_table_name || ' where move_job_id = ' || v_move_job_id;
+          EXECUTE IMMEDIATE v_sql_text INTO v_dr_last_cnt;
+          
+          IF v_prod_last_cnt != v_dr_last_cnt THEN
+            RAISE_APPLICATION_ERROR(-20005, '[' || v_table_name || ']:' || 'MOVE_JOB_ID= '|| v_move_job_id ||'，主中心與異地his表筆數不一致!');
+          END IF;
         ELSE
             -- 沒有資料或資料筆數大於一筆
             DBMS_OUTPUT.PUT_LINE('No data or more than one row found.');
