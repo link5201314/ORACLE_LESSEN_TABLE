@@ -52,7 +52,20 @@ END;
 
 主中心
 prod.table -> [prod]table_bakhis(增加move_job_id欄位)
+create table <table_name> as
+select *
+  from <source_table> 
+ where 1 = 0;
+
+
 ALTER TABLE table_bakhis ADD (move_job_id Number);
+
+create table SSP_TKT_TXN_HIS_BAKHIS as
+select *
+  from SSP_TKT_TXN_HIS
+ where 1 = 0;
+ 
+ALTER TABLE SSP_TKT_TXN_HIS_BAKHIS ADD (move_job_id Number);
 
 異地
 dr.table -> [dr]his.table(增加move_job_id欄位)
