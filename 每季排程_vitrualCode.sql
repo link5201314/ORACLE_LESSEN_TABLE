@@ -20,19 +20,17 @@ BEGIN
 			--如果判斷筆數不一致則拋出Exception，並rollback
 			IF (prod_last_cnt != dr_last_cnt) THEN
 			  raise_exception
+			ELSE
+			  --清除主中心TABLE內的標記舊資料
+			  truncate table table_bakhis;
 			END IF;
-
-			--清除主中心TABLE內的標記舊資料
-			truncate table table_bakhis;
 		END IF;
-		
-
 		
 		--3) 將主中心Table標記舊資料複製至table_bakhis
 		bak_cnt = insert into table_bakhis select *, new_job_id  from table where is_old_data = Y;
 
 		--4) 將主中心Table標記舊資料複製至HIS.TABLE
-		bak_cnt = insert into his.table@dr select *, new_job_id  from table@dr where is_old_data = Y;
+		his_cnt = insert into his.table@dr select *, new_job_id  from table@dr where is_old_data = Y;
 		
 		--5) 刪除主中心TABLE內的標記舊資料
 		del_cnt = delete from table where is_old_data = Y;
