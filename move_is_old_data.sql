@@ -1,4 +1,4 @@
-create or replace PROCEDURE     USP_MOVE_IS_OLD_DATA
+create or replace PROCEDURE TRW.USP_MOVE_IS_OLD_DATA
 AS
     cur_sel_LESSEN_TABLE sys_refcursor ;
     sql_list TRW.LESSEN_TABLE@TRWP101_TC%ROWTYPE;
@@ -72,6 +72,14 @@ BEGIN
 
           IF v_prod_last_cnt != v_dr_last_cnt THEN
             RAISE_APPLICATION_ERROR(-20005, '[' || v_table_name || ']:' || 'MOVE_JOB_ID= '|| v_move_job_id ||'，主中心與異地his表筆數不一致!');
+          ELSE
+            DBMS_OUTPUT.PUT_LINE('主中心與異地his表筆數一致，Truncate主中心his表');
+            --v_sql_text := 'USP_TRUNC_BAKHIS_TBL@TRWP101_TC(:v_table_name);';
+            v_sql_text := 'BEGIN USP_TRUNC_BAKHIS_TBL@TRWP101_TC(''' || v_table_name || '''); END;';  --一定要加begin & end
+            DBMS_OUTPUT.PUT_LINE(v_sql_text);
+
+            EXECUTE IMMEDIATE v_sql_text ;
+            --EXECUTE IMMEDIATE v_sql_text USING v_table_name;
           END IF;
         ELSE
             -- 沒有資料或資料筆數大於一筆
@@ -79,14 +87,10 @@ BEGIN
             RAISE_APPLICATION_ERROR(-20004, '[TRW.' || v_table_name || '_bakhis@TRWP101_TC]，' || 'MOVE_JOB_ID值不唯一!');
         END IF;
 
-        --開始搬移與刪除歷史資料
+        --開始刪除歷史資料
         BEGIN
             SAVEPOINT DOHIS;	
-            DBMS_OUTPUT.PUT_LINE('start processing!');
-            v_sql_text := 'BEGIN USP_TRUNC_BAKHIS_TBL@TRWP101_TC(:v_table_name); END;';
-            DBMS_OUTPUT.PUT_LINE(v_sql_text);
-
-            EXECUTE IMMEDIATE v_sql_text USING v_table_name;
+            DBMS_OUTPUT.PUT_LINE('Start Delete His Data!');
 
             --執行無例外錯誤最後才commit，並將此job執行紀錄至job紀錄table(含job_id、處理table、備份筆數、日期)
             commit;
@@ -103,6 +107,8 @@ BEGIN
                 dbms_output.put_line( '[例外處理3]SQLERRM : ['||SQLERRM||']' );
                 rollback TO DOHIS;
         END;
+        
+        commit;
 	END LOOP;
 
     dbms_output.put_line('Total Rows: ' || cur_sel_LESSEN_TABLE%rowcount);--here you will get total row count;
