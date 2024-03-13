@@ -12,7 +12,7 @@ AS
 
     v_job_id_cnt NUMBER;
     v_move_job_id NUMBER;
-    v_sql_text VARCHAR2(100);
+    v_sql_text VARCHAR2(200);
 
     v_prod_last_cnt NUMBER;
     v_dr_last_cnt NUMBER;
@@ -71,7 +71,7 @@ BEGIN
           EXECUTE IMMEDIATE v_sql_text INTO v_dr_last_cnt;
 
           IF v_prod_last_cnt != v_dr_last_cnt THEN
-            RAISE_APPLICATION_ERROR(-20005, '[' || v_table_name || ']:' || 'MOVE_JOB_ID= '|| v_move_job_id ||'，主中心與異地his表筆數不一致!');
+            RAISE_APPLICATION_ERROR(-20005, '[' || v_table_name || ', MOVE_JOB_ID= '|| v_move_job_id || ']: 主中心與異地his表筆數不一致!');
           ELSE
             DBMS_OUTPUT.PUT_LINE('主中心與異地his表筆數一致，Truncate主中心his表');
             --v_sql_text := 'USP_TRUNC_BAKHIS_TBL@TRWP101_TC(:v_table_name);';
@@ -87,12 +87,42 @@ BEGIN
             RAISE_APPLICATION_ERROR(-20004, '[TRW.' || v_table_name || '_bakhis@TRWP101_TC]，' || 'MOVE_JOB_ID值不唯一!');
         END IF;
 
-        --開始刪除歷史資料
+        --開始備份與刪除歷史資料
         BEGIN
             SAVEPOINT DOHIS;	
             DBMS_OUTPUT.PUT_LINE('Start Delete His Data!');
+            
+            --要測試有沒有辦法進行parallel加速
+            v_sql_text := 'INSERT INTO TRW.' || v_table_name || '_bakhis@TRWP101_TC select t.*, ' || v_new_job_id || ' FROM TRW.' || v_table_name || '@TRWP101_TC t WHERE t.is_old_data = ''Y''';
+            DBMS_OUTPUT.PUT_LINE(v_sql_text);
+            
+            EXECUTE IMMEDIATE v_sql_text;
+            v_bak_cnt := SQL%ROWCOUNT;
+            DBMS_OUTPUT.PUT_LINE(v_bak_cnt);
+            
+            v_sql_text := 'INSERT INTO HIS.' || v_table_name || ' select t.*, ' || v_new_job_id || ' FROM TRW.' || v_table_name || ' t WHERE t.is_old_data = ''Y''';
+            DBMS_OUTPUT.PUT_LINE(v_sql_text);
+            
+            EXECUTE IMMEDIATE v_sql_text;
+            v_his_cnt := SQL%ROWCOUNT;
+            DBMS_OUTPUT.PUT_LINE(v_his_cnt);
+            
+            --要測試有沒有辦法進行parallel加速
+            v_sql_text := 'DELETE FROM TRW.' || v_table_name || '@TRWP101_TC t WHERE t.is_old_data = ''Y''';
+            DBMS_OUTPUT.PUT_LINE(v_sql_text);
+            
+            EXECUTE IMMEDIATE v_sql_text;
+            v_del_cnt := SQL%ROWCOUNT;
+            DBMS_OUTPUT.PUT_LINE(v_his_cnt);
+            
+            --v_del_cnt := 0;
+            
+            IF (v_bak_cnt != v_his_cnt) or (v_bak_cnt != v_del_cnt) THEN
+                RAISE_APPLICATION_ERROR(-20006, '[' || v_table_name || ', MOVE_JOB_ID= '|| v_move_job_id || ']: 備份與刪除筆數不一致!');
+            END IF;
 
             --執行無例外錯誤最後才commit，並將此job執行紀錄至job紀錄table(含job_id、處理table、備份筆數、日期)
+            DBMS_OUTPUT.PUT_LINE('Execute Succeed!');
             commit;
         EXCEPTION
             WHEN OTHERS THEN
