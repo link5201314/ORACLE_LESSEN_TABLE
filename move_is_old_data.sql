@@ -23,7 +23,7 @@ AS
 
 BEGIN
 	--1) 為此次job取得最新的job_id
-	SELECT TRW.LESSEN_TABLE_MOVE_JOB_ID_SQ.NEXTVAL INTO v_new_job_id FROM dual;
+	SELECT TRW.LESSEN_TABLE_MOVE_SQ.NEXTVAL INTO v_new_job_id FROM dual;
 	dbms_output.put_line('v_new_job_id: ' || v_new_job_id);
 
     BEGIN
