@@ -171,8 +171,9 @@ BEGIN
 					  v_haserror := TRUE;
 					  v_err_code := SQLCODE;
 					  v_err_msg := SQLERRM;
+					  ROLLBACK;
 					  INSERT INTO LESSEN_TABLE_EXEC_SQL_DETAIL VALUES(v_job_id, v_table_name, l_counter, v_timestart, SYSTIMESTAMP
-					  , SYSTIMESTAMP-v_timestart, v_row, v_sql_para, v_err_code, v_err_msg);
+					  , SYSTIMESTAMP-v_timestart, 0, v_sql_para, v_err_code, v_err_msg);
 					  commit;
 					  dbms_output.put_line( '[例外處理3]SQLCODE : ['||SQLCODE||']' );
 					  dbms_output.put_line( '[例外處理3]SQLERRM : ['||SQLERRM||']' );
@@ -196,6 +197,7 @@ BEGIN
 		  v_haserror := TRUE;
           v_err_code := SQLCODE;
           v_err_msg := SQLERRM;
+		  ROLLBACK;
           UPDATE LESSEN_TABLE_EXEC_SQL SET STATUS='ERROR', SQL_CODE=v_err_code, SQL_ERRM=v_err_msg  
 		  WHERE JOB_ID = v_job_id AND LESSEN_TABLE = v_table_name;
           commit;
@@ -218,6 +220,7 @@ EXCEPTION
    WHEN OTHERS THEN
       v_err_code := SQLCODE;
       v_err_msg := SQLERRM;
+	  ROLLBACK;
       UPDATE LESSEN_TABLE_EXEC_JOB SET STATUS='ERROR', FUNC_END_TIME=SYSTIMESTAMP, SQL_CODE=v_err_code, SQL_ERRM=v_err_msg  
 	  WHERE JOB_ID = v_job_id;
       commit;
