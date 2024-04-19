@@ -29,7 +29,7 @@ BEGIN
 		--3) 將主中心Table標記舊資料複製至table_bakhis
 		bak_cnt = insert into table_bakhis select *, new_job_id  from table where is_old_data = Y;
 
-		--4) 將主中心Table標記舊資料複製至HIS.TABLE
+		--4) 將異地Table標記舊資料複製至HIS.TABLE
 		his_cnt = insert into his.table@dr select *, new_job_id  from table@dr where is_old_data = Y;
 		
 		--5) 刪除主中心TABLE內的標記舊資料(異地不用刪除，會透過OGG同步)
